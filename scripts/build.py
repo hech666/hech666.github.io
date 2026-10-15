@@ -6,6 +6,8 @@ OUT = ROOT / 'public'
 if OUT.exists(): shutil.rmtree(OUT)
 OUT.mkdir()
 (OUT / 'debs').mkdir()
+for icon_name in ('CydiaIcon.png', 'CydiaIcon@2x.png', 'CydiaIcon@3x.png'):
+    shutil.copy2(ROOT / 'site' / 'CydiaIcon.png', OUT / icon_name)
 entries, packages, arches = [], [], set()
 for deb in sorted((ROOT / 'debs').glob('*.deb')):
     control = subprocess.check_output(['dpkg-deb', '-f', str(deb)], text=True).strip()
@@ -39,6 +41,7 @@ index = ''.join(entries).encode()
 release = ['Origin: haoge', 'Label: haoge', 'Suite: stable', 'Codename: haoge',
            'Version: 1.0', 'Architectures: ' + ' '.join(sorted(arches | {'iphoneos-arm', 'iphoneos-arm64', 'iphoneos-arm64e'})),
            'Components: main', 'Description: haoge jailbreak repository',
+           'Icon: https://hech666.github.io/CydiaIcon.png',
            'Date: ' + datetime.datetime.now(datetime.timezone.utc).strftime('%a, %d %b %Y %H:%M:%S +0000')]
 for label, algorithm in [('MD5Sum', 'md5'), ('SHA1', 'sha1'), ('SHA256', 'sha256')]:
     release.append(label + ':')
