@@ -16,21 +16,21 @@ for deb in sorted((ROOT / 'debs').glob('*.deb')):
             fields[k] = v.strip()
     for key in ('Package', 'Version', 'Architecture'):
         if not fields.get(key): raise SystemExit(f'{deb.name}: missing {key}')
-    if any(c.isspace() for c in deb.name) or any(c in deb.name for c in '#?%'):
-        raise SystemExit(f'Unsafe filename: {deb.name}; use ASCII letters, digits, dots, underscores, hyphens')
     data = deb.read_bytes()
+    # Publish under an ASCII content-addressed name; keep uploaded deb bytes intact.
+    published_name = hashlib.sha256(data).hexdigest() + '.deb'
     # Strip generated index fields if present in a package control.
     lines, skip = [], False
     for line in control.splitlines():
         if line and not line[0].isspace():
             skip = line.split(':', 1)[0] in ('Filename', 'Size', 'MD5sum', 'SHA1', 'SHA256', 'SHA512')
         if not skip: lines.append(line)
-    lines += [f'Filename: debs/{deb.name}', f'Size: {len(data)}',
+    lines += [f'Filename: debs/{published_name}', f'Size: {len(data)}',
               f'MD5sum: {hashlib.md5(data).hexdigest()}', f'SHA1: {hashlib.sha1(data).hexdigest()}',
               f'SHA256: {hashlib.sha256(data).hexdigest()}']
     entries.append('\n'.join(lines) + '\n\n')
     arches.add(fields['Architecture'])
-    shutil.copy2(deb, OUT / 'debs' / deb.name)
+    shutil.copy2(deb, OUT / 'debs' / published_name)
     packages.append({'name': fields.get('Name', fields['Package']), 'version': fields['Version'], 'arch': fields['Architecture']})
 index = ''.join(entries).encode()
 (OUT / 'Packages').write_bytes(index)
