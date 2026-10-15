@@ -9,15 +9,26 @@ OUT.mkdir()
 for icon_name in ('CydiaIcon.png', 'CydiaIcon@2x.png', 'CydiaIcon@3x.png'):
     shutil.copy2(ROOT / 'site' / 'CydiaIcon.png', OUT / icon_name)
 entries, packages, arches = [], [], set()
+skipped = []
 for deb in sorted((ROOT / 'debs').glob('*.deb')):
-    control = subprocess.check_output(['dpkg-deb', '-f', str(deb)], text=True).strip()
+    result = subprocess.run(['dpkg-deb', '-f', str(deb)], text=True, capture_output=True)
+    if result.returncode:
+        reason = result.stderr.strip()
+        print(f'WARNING: skipping invalid package {deb.name}: {reason}')
+        skipped.append({'file': deb.name, 'reason': reason})
+        continue
+    control = result.stdout.strip()
     fields = {}
     for line in control.splitlines():
         if line and not line[0].isspace() and ':' in line:
             k, v = line.split(':', 1)
             fields[k] = v.strip()
-    for key in ('Package', 'Version', 'Architecture'):
-        if not fields.get(key): raise SystemExit(f'{deb.name}: missing {key}')
+    missing = [key for key in ('Package', 'Version', 'Architecture') if not fields.get(key)]
+    if missing:
+        reason = 'missing fields: ' + ', '.join(missing)
+        print(f'WARNING: skipping invalid package {deb.name}: {reason}')
+        skipped.append({'file': deb.name, 'reason': reason})
+        continue
     data = deb.read_bytes()
     # Publish under an ASCII content-addressed name; keep uploaded deb bytes intact.
     published_name = hashlib.sha256(data).hexdigest() + '.deb'
@@ -34,6 +45,9 @@ for deb in sorted((ROOT / 'debs').glob('*.deb')):
     arches.add(fields['Architecture'])
     shutil.copy2(deb, OUT / 'debs' / published_name)
     packages.append({'name': fields.get('Name', fields['Package']), 'version': fields['Version'], 'arch': fields['Architecture']})
+(OUT / 'skipped-packages.json').write_text(json.dumps(skipped, ensure_ascii=False, indent=2))
+if not entries:
+    raise SystemExit('No valid packages; refusing to publish an empty repository')
 index = ''.join(entries).encode()
 (OUT / 'Packages').write_bytes(index)
 (OUT / 'Packages.gz').write_bytes(gzip.compress(index, mtime=0))
