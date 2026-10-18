@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build a flat APT repository. Requires Python 3 and dpkg-deb."""
-import pathlib, subprocess, hashlib, gzip, bz2, shutil, datetime, html, json
+import pathlib, subprocess, hashlib, gzip, bz2, shutil, datetime, html, json, tarfile, io
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / 'public'
 if OUT.exists(): shutil.rmtree(OUT)
@@ -11,13 +11,22 @@ for icon_name in ('CydiaIcon.png', 'CydiaIcon@2x.png', 'CydiaIcon@3x.png'):
 entries, packages, arches = [], [], set()
 skipped = []
 for deb in sorted((ROOT / 'debs').glob('*.deb')):
-    result = subprocess.run(['dpkg-deb', '-f', str(deb)], text=True, capture_output=True)
-    if result.returncode:
-        reason = result.stderr.strip()
+    # Read control from a tar stream without extracting filesystem permissions.
+    result = subprocess.run(['dpkg-deb', '--ctrl-tarfile', str(deb)], capture_output=True)
+    try:
+        if result.returncode:
+            raise ValueError(result.stderr.decode('utf-8', errors='replace').strip())
+        import tarfile, io
+        with tarfile.open(fileobj=io.BytesIO(result.stdout), mode='r:') as archive:
+            members = [m for m in archive.getmembers() if m.name.lstrip('./') == 'control' and m.isfile()]
+            if len(members) != 1:
+                raise ValueError('Expected exactly one regular control file')
+            control = archive.extractfile(members[0]).read().decode('utf-8').strip()
+    except (ValueError, tarfile.TarError, UnicodeError) as exc:
+        reason = str(exc)
         print(f'WARNING: skipping invalid package {deb.name}: {reason}')
         skipped.append({'file': deb.name, 'reason': reason})
         continue
-    control = result.stdout.strip()
     fields = {}
     for line in control.splitlines():
         if line and not line[0].isspace() and ':' in line:
